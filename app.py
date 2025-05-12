@@ -1,3 +1,7 @@
+"""
+App entry point for Railway deployment 
+This is a standard name many Python platforms look for
+"""
 from flask import Flask, request, render_template, redirect, url_for, session
 import os
 import re
@@ -133,7 +137,7 @@ def results():
         message_count=message_count
     )
 
-if __name__ == '__main__':
-    # Create templates directory if it doesn't exist
-    os.makedirs('templates', exist_ok=True)
-    app.run(debug=True) 
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 3000))
+    app.run(host="0.0.0.0", port=port) 
