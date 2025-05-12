@@ -476,8 +476,8 @@ def internal_error(error):
     </html>
     """, 500
 
-# Ensure templates directory exists
-@app.before_first_request
+# Replace before_first_request with a middleware
+# This works in all Flask versions
 def ensure_templates_directory():
     try:
         os.makedirs('templates', exist_ok=True)
@@ -487,10 +487,10 @@ def ensure_templates_directory():
     except Exception as e:
         app.logger.error(f"Error ensuring templates directory: {e}")
 
+# Create templates directory when app starts
+ensure_templates_directory()
+
 if __name__ == '__main__':
-    # Create templates directory if it doesn't exist
-    os.makedirs('templates', exist_ok=True)
-    
     # Get port from environment variable for Railway.com compatibility
     port = int(os.environ.get('PORT', 3000))
     
