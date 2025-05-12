@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Chat Analysis Results</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #4CAF50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #2196F3;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-top: 40px;
+        }
+        .summary {
+            background: #E8F5E9;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .summary span {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .back-btn {
+            display: inline-block;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #2196F3;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            transition: background 0.3s;
+        }
+        .back-btn:hover {
+            background: #0b7dda;
+        }
+        .tip-card {
+            background: #f9f9f9;
+            border-left: 4px solid #4CAF50;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .tip-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+        .tip-content {
+            white-space: pre-wrap;
+        }
+        .link-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .link-item {
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-left: 4px solid #2196F3;
+            border-radius: 4px;
+        }
+        .link-item a {
+            color: #2196F3;
+            text-decoration: none;
+            font-weight: 500;
+            word-break: break-all;
+        }
+        .link-item a:hover {
+            text-decoration: underline;
+        }
+        .empty-message {
+            text-align: center;
+            padding: 20px;
+            background: #FFFDE7;
+            border-radius: 4px;
+            color: #FF9800;
+        }
+        @media print {
+            .back-btn {
+                display: none;
+            }
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WhatsApp Chat Analysis Results</h1>
+        
+        <div class="summary">
+            Analyzed <span>{{ message_count }}</span> messages, found <span>{{ coding_tips|length }}</span> coding tips and <span>{{ link_titles|length }}</span> links.
+        </div>
+        
+        <a href="/" class="back-btn">← Upload Another Chat</a>
+        
+        <h2>Coding Tips & Knowledge</h2>
+        
+        {% if coding_tips %}
+            {% for tip in coding_tips %}
+            <div class="tip-card">
+                <div class="tip-header">
+                    <div class="sender">{{ tip.sender }}</div>
+                    <div class="date">{{ tip.date }}</div>
+                </div>
+                <div class="tip-content">{{ tip.content }}</div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-message">No coding tips found in this chat.</div>
+        {% endif %}
+        
+        <h2>Resource Links</h2>
+        
+        {% if link_titles %}
+            <ul class="link-list">
+                {% for link in link_titles %}
+                <li class="link-item">
+                    <a href="{{ link.url }}" target="_blank">{{ link.title if link.title else link.url }}</a>
+                </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="empty-message">No links found in this chat.</div>
+        {% endif %}
+        
+        <a href="/" class="back-btn">← Upload Another Chat</a>
+    </div>
+</body>
+</html> 
