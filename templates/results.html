@@ -124,6 +124,24 @@
             padding: 15px;
             border-radius: 8px;
         }
+        .meeting-link {
+            border-left: 4px solid #FF9800;
+            background: #FFF8E1;
+        }
+        .content-link {
+            border-left: 4px solid #2196F3;
+            background: #f9f9f9;
+        }
+        .error-link {
+            border-left: 4px solid #F44336;
+            background: #FFEBEE;
+        }
+        .link-type {
+            font-size: 12px;
+            color: #757575;
+            margin-left: 10px;
+            font-style: italic;
+        }
         @media print {
             .back-btn {
                 display: none;
@@ -176,8 +194,19 @@
         {% if link_titles %}
             <ul class="link-list">
                 {% for link in link_titles %}
-                <li class="link-item">
-                    <a href="{{ link.url }}" target="_blank">{{ link.title if link.title else link.url }}</a>
+                <li class="link-item {% if link.type == 'meeting_link' %}meeting-link{% elif link.type == 'content_link' %}content-link{% else %}error-link{% endif %}">
+                    {% if link.type == 'meeting_link' %}
+                        <!-- Simple link for meeting URLs -->
+                        <a href="{{ link.url }}" target="_blank">{{ link.url }}</a>
+                        <span class="link-type">(Meeting/Tool link)</span>
+                    {% elif link.type == 'content_link' %}
+                        <!-- Titled link for content -->
+                        <a href="{{ link.url }}" target="_blank">{{ link.title if link.title else link.url }}</a>
+                    {% else %}
+                        <!-- Fallback for error cases -->
+                        <a href="{{ link.url }}" target="_blank">{{ link.url }}</a>
+                        <span class="link-type">(Could not fetch title)</span>
+                    {% endif %}
                 </li>
                 {% endfor %}
             </ul>

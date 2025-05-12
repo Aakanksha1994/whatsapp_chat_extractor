@@ -99,19 +99,42 @@ def extract_urls(messages: List[Dict[str, str]]) -> List[str]:
     return list(urls)
 
 def fetch_url_title(url):
-    """Fetch the title of a webpage."""
+    """Fetch the title of a webpage, with special handling for different URL types."""
+    # Skip processing for meeting links and tool links
+    skip_domains = [
+        'zoom.us', 'meet.google.com', 'teams.microsoft.com', 'webex.com',
+        'railway.app', 'up.railway.app', 'localhost', '127.0.0.1',
+        'srecraft.io', 'aviraj.dev'
+    ]
+    
+    # Skip URLs with specific patterns
+    skip_patterns = [
+        r'zoom\.us\/j\/', r'meet\.google\.com\/[a-z-]+', 
+        r'teams\.microsoft\.com\/l\/meetup',
+        r'localhost', r'127\.0\.0\.1'
+    ]
+    
+    for domain in skip_domains:
+        if domain in url:
+            return url  # Return the raw URL without fetching title
+    
+    for pattern in skip_patterns:
+        if re.search(pattern, url):
+            return url  # Return the raw URL without fetching title
+            
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        resp = requests.get(url, headers=headers, timeout=5)
+        # Use a shorter timeout to avoid worker timeouts
+        resp = requests.get(url, headers=headers, timeout=2, verify=False)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, 'html.parser')
         title = soup.title.string if soup.title else url
         return title.strip()
     except Exception as e:
-        print(f"Error fetching title for {url}: {e}")
-        return url
+        app.logger.error(f"Error fetching title for {url}: {e}")
+        return url  # Return the URL itself on error
 
 def extract_ai_coding_knowledge_with_openai(messages: List[Dict[str, str]]) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -350,10 +373,29 @@ def index():
                     
                     # Extract URLs and their titles
                     urls = extract_urls(messages)
+                    
+                    # Process URLs more efficiently to avoid timeouts
                     link_titles = []
                     for url in urls:
-                        title = fetch_url_title(url)
-                        link_titles.append({'url': url, 'title': title})
+                        try:
+                            # Check if URL is in skip list before fetching
+                            skip_domains = [
+                                'zoom.us', 'meet.google.com', 'teams.microsoft.com', 'webex.com',
+                                'railway.app', 'up.railway.app', 'localhost', '127.0.0.1',
+                                'srecraft.io', 'aviraj.dev'
+                            ]
+                            
+                            if any(domain in url for domain in skip_domains):
+                                # Don't fetch title for meeting/tool links
+                                link_titles.append({'url': url, 'title': url, 'type': 'meeting_link'})
+                            else:
+                                # Only fetch titles for regular websites
+                                title = fetch_url_title(url)
+                                link_titles.append({'url': url, 'title': title, 'type': 'content_link'})
+                        except Exception as e:
+                            # If there's an error fetching the title, just use the URL
+                            app.logger.error(f"Error processing URL {url}: {e}")
+                            link_titles.append({'url': url, 'title': url, 'type': 'error'})
                     
                     # Extract coding tips
                     coding_tips = extract_ai_coding_knowledge_with_openai(messages)
