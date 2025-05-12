@@ -1,1 +1,1 @@
-web: ./entry.sh
+web:gunicorn simple_app:app

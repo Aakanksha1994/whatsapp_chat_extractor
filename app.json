@@ -1,0 +1,20 @@
+{
+  "name": "WhatsApp Chat Analyzer",
+  "description": "Extract and analyze coding and AI knowledge from WhatsApp chat exports",
+  "repository": "https://github.com/Aakanksha1994/whatsapp_chat_extractor",
+  "keywords": ["python", "flask", "whatsapp", "ai"],
+  "env": {
+    "OPENAI_API_KEY": {
+      "description": "Your OpenAI API key"
+    }
+  },
+  "scripts": {
+    "postdeploy": "echo 'App deployed!'",
+    "start": "gunicorn simple_app:app"
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
+} 

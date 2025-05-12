@@ -1,12 +1,8 @@
 {
-  "name": "whatsapp-chat-extractor",
+  "name": "whatsapp-chat-analyzer",
   "version": "1.0.0",
   "description": "Extract coding knowledge from WhatsApp chats",
-  "main": "simple_app.py",
   "scripts": {
-    "start": "gunicorn simple_app:app --bind 0.0.0.0:$PORT"
-  },
-  "engines": {
-    "node": ">=14"
+    "start": "gunicorn simple_app:app"
   }
 } 
