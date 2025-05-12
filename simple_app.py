@@ -81,20 +81,6 @@ def extract_urls(messages: List[Dict[str, str]]) -> List[str]:
         urls.update(found)
     return list(urls)
 
-def classify_url(url: str) -> Dict:
-    """Classify URL without fetching content"""
-    # Meeting and tool links
-    meeting_domains = ['zoom.us', 'meet.google.com', 'teams.microsoft.com', 'webex.com']
-    tool_domains = ['railway.app', 'up.railway.app', 'localhost', '127.0.0.1', 
-                   'srecraft.io', 'aviraj.dev']
-    
-    if any(domain in url for domain in meeting_domains):
-        return {'url': url, 'title': url, 'type': 'meeting_link'}
-    elif any(domain in url for domain in tool_domains):
-        return {'url': url, 'title': url, 'type': 'tool_link'}
-    else:
-        return {'url': url, 'title': url, 'type': 'content_link'}
-
 @app.route('/')
 def index():
     """Simple home page that doesn't rely on templates"""
@@ -139,9 +125,8 @@ def upload():
             file.save(filepath)
             messages = parse_whatsapp_chat(filepath)
             
-            # Extract and classify URLs
-            raw_urls = extract_urls(messages)
-            links = [classify_url(url) for url in raw_urls]
+            # Extract URLs without classification
+            links = extract_urls(messages)
             
             # Prepare results
             results = {
@@ -161,10 +146,7 @@ def upload():
                     h1 {{ color: #4CAF50; }}
                     .summary {{ background: #E8F5E9; padding: 10px; border-radius: 5px; margin: 20px 0; }}
                     .link-list {{ list-style-type: none; padding: 0; }}
-                    .link-item {{ margin-bottom: 10px; padding: 10px; border-radius: 5px; }}
-                    .meeting-link {{ background: #FFF8E1; border-left: 4px solid #FF9800; }}
-                    .tool-link {{ background: #E1F5FE; border-left: 4px solid #03A9F4; }}
-                    .content-link {{ background: #F5F5F5; border-left: 4px solid #2196F3; }}
+                    .link-item {{ margin-bottom: 10px; padding: 10px; border-radius: 5px; background: #F5F5F5; }}
                     a {{ color: #2196F3; text-decoration: none; }}
                     a:hover {{ text-decoration: underline; }}
                     .back {{ display: inline-block; margin-top: 20px; color: white; background: #4CAF50; padding: 10px 15px; text-decoration: none; }}
@@ -179,7 +161,7 @@ def upload():
                 
                 <h2>Links from Chat</h2>
                 <ul class="link-list">
-                    {"".join([f'<li class="{link["type"]}"><a href="{link["url"]}" target="_blank">{link["url"]}</a></li>' for link in links])}
+                    {"".join([f'<li class="link-item"><a href="{link}" target="_blank">{link}</a></li>' for link in links])}
                 </ul>
                 
                 <a href="/" class="back">← Back to Upload</a>
