@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, redirect, url_for, session
+from flask import Flask, request, render_template, redirect, url_for, session, send_file
 import os
 import re
 from typing import List, Dict, Any
@@ -6,11 +6,25 @@ import requests
 from bs4 import BeautifulSoup
 import tempfile
 import json
+import uuid
+import shutil
+import openai
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max file size
+app.config['RESULTS_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'results')
+os.makedirs(app.config['RESULTS_FOLDER'], exist_ok=True)
+
+# Initialize OpenAI with API key from .env file
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    print("WARNING: OpenAI API key not found. Please add OPENAI_API_KEY to your .env file")
 
 def parse_whatsapp_chat(file_path: str) -> List[Dict[str, str]]:
     """Parse WhatsApp chat export into structured messages."""
@@ -99,42 +113,217 @@ def fetch_url_title(url):
         print(f"Error fetching title for {url}: {e}")
         return url
 
-def extract_coding_tips(messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-    """Extract coding tips and guidance from messages."""
-    coding_keywords = [
-        'code', 'coding', 'programming', 'developer', 'software', 'web', 'app', 
-        'javascript', 'python', 'java', 'html', 'css', 'react', 'angular', 'vue',
-        'node', 'api', 'git', 'github', 'stack', 'framework', 'library', 'function',
-        'algorithm', 'database', 'sql', 'backend', 'frontend', 'fullstack', 'debug',
-        'compiler', 'interpreter', 'syntax', 'variable', 'loop', 'condition', 'class',
-        'object', 'method', 'AI', 'cursor', 'IDE', 'editor', 'build', 'deploy', 'server',
-        'client', 'terminal', 'command', 'prompt', 'install', 'package', 'dependency',
-        'npm', 'pip', 'yarn', 'docker', 'kubernetes', 'cloud', 'AWS', 'Azure', 'GCP'
-    ]
+def extract_ai_coding_knowledge_with_openai(messages: List[Dict[str, str]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Extract AI coding knowledge and tips from WhatsApp chat messages using OpenAI.
+    
+    Returns a dictionary with categories as keys and lists of tips as values.
+    """
+    if not openai.api_key:
+        print("OpenAI API key not found. Using fallback local extraction.")
+        return extract_coding_tips_local(messages)
+    
+    # Combine messages into a single text with structure
+    message_text = "\n\n".join([
+        f"Date: {msg['date']}, Sender: {msg['sender']}\n{msg['message']}" 
+        for msg in messages
+    ])
+    
+    # Limit text to avoid token limits (around 32k tokens for GPT-4)
+    if len(message_text) > 100000:  # Approximate token limit
+        message_text = message_text[:100000]
+    
+    try:
+        # Create the system prompt with instructions
+        system_prompt = """
+        You are an AI assistant specialized in extracting valuable knowledge about AI coding tools and practices from WhatsApp chats.
+        
+        TASK: Extract and organize only the valuable knowledge, tips, and lessons about coding with AI tools from the provided WhatsApp chat.
+        
+        INSTRUCTIONS:
+        1. Focus ONLY on information related to coding with AI tools (Cursor, Copilot, ChatGPT, Claude, etc.)
+        2. Ignore general conversations, greetings, and non-informative messages
+        3. Extract specific knowledge, tips, techniques, and lessons
+        4. Organize the information into these categories:
+           - AI Coding Tools: Information about specific tools like Cursor, Copilot, etc.
+           - Prompt Engineering: Tips for writing effective prompts
+           - AI Development Workflow: How to integrate AI into development workflows
+           - Coding Best Practices: Best practices when working with AI
+           - AI Limitations & Workarounds: Common issues and how to fix them
+        
+        OUTPUT FORMAT:
+        Return a JSON object with categories as keys and arrays of extracted knowledge points as values.
+        Each knowledge point should have:
+        - content: The actual knowledge/tip text
+        
+        Do not include sender information or dates. Focus only on the valuable content.
+        """
+        
+        # Make the API call to ChatGPT
+        response = openai.chat.completions.create(
+            model="gpt-4o",  # You can switch to gpt-3.5-turbo if needed
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Here is the WhatsApp chat transcript:\n\n{message_text}"}
+            ],
+            temperature=0.1,  # Low temperature for more deterministic output
+            max_tokens=3000,
+            response_format={"type": "json_object"}
+        )
+        
+        # Extract and parse JSON from response
+        ai_response = response.choices[0].message.content
+        categorized_knowledge = json.loads(ai_response)
+        
+        # If the response doesn't match expected format, apply some fixes
+        if not any(category in categorized_knowledge for category in [
+            "AI Coding Tools", "Prompt Engineering", "AI Development Workflow", 
+            "Coding Best Practices", "AI Limitations & Workarounds"
+        ]):
+            print("OpenAI response didn't match expected format. Attempting to fix...")
+            # Create standard structure
+            fixed_response = {
+                "AI Coding Tools": [],
+                "Prompt Engineering": [],
+                "AI Development Workflow": [],
+                "Coding Best Practices": [],
+                "AI Limitations & Workarounds": []
+            }
+            
+            # Try to fit the response into this structure
+            for category, items in categorized_knowledge.items():
+                best_match = "AI Coding Tools"  # Default
+                for standard_cat in fixed_response.keys():
+                    if standard_cat.lower() in category.lower() or category.lower() in standard_cat.lower():
+                        best_match = standard_cat
+                        break
+                
+                if isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict) and "content" in item:
+                            fixed_response[best_match].append(item)
+                        elif isinstance(item, str):
+                            fixed_response[best_match].append({"content": item})
+                        else:
+                            # Try to convert to standard format
+                            content = str(item)
+                            fixed_response[best_match].append({"content": content})
+            
+            return fixed_response
+            
+        return categorized_knowledge
+        
+    except Exception as e:
+        print(f"Error using OpenAI API: {e}")
+        # Fall back to local extraction if OpenAI fails
+        return extract_coding_tips_local(messages)
+
+def extract_coding_tips_local(messages: List[Dict[str, str]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Local fallback for extracting coding tips if OpenAI is unavailable."""
+    # Keywords for different categories
+    categories = {
+        'AI Coding Tools': [
+            'cursor', 'copilot', 'github copilot', 'gpt', 'chatgpt', 'claude', 'ai coding', 
+            'ai pair programming', 'cody', 'tabnine', 'kite', 'intellicode', 'ai assistant',
+            'openai', 'anthropic', 'code completion', 'code generation', 'llm'
+        ],
+        'Prompt Engineering': [
+            'prompt', 'prompt engineering', 'system prompt', 'context window', 'few-shot', 
+            'zero-shot', 'chain of thought', 'cot', 'token', 'temperature', 'top_p',
+            'instruction', 'completion'
+        ],
+        'AI Development Workflow': [
+            'workflow', 'ai workflow', 'pair programming', 'development', 'ide integration',
+            'code review', 'refactoring', 'debugging', 'testing', 'documentation'
+        ],
+        'Coding Best Practices': [
+            'best practice', 'pattern', 'architecture', 'design', 'clean code', 'maintainable', 
+            'performance', 'optimization', 'efficient', 'robust', 'reliable'
+        ],
+        'AI Limitations & Workarounds': [
+            'limitation', 'hallucination', 'error', 'workaround', 'fix', 'solution', 'problem',
+            'issue', 'bug', 'incorrect', 'wrong', 'accurate', 'reliable', 'improve'
+        ]
+    }
     
     tips = []
     
     for msg in messages:
         text = msg['message'].lower()
         
-        # Check if message contains coding-related keywords
-        if any(keyword.lower() in text for keyword in coding_keywords):
-            # Look for sentences that might be tips or advice
-            if any(phrase in text for phrase in ['tip', 'advice', 'how to', 'should', 'try', 'recommend', 'suggestion', 'best practice']):
+        # Skip short messages
+        if len(text.split()) < 15:
+            continue
+            
+        # Only include if it has knowledge/tip indicators
+        knowledge_indicators = [
+            'how to', 'you can', 'try this', 'best practice', 'tip', 'advice', 'recommend',
+            'solution', 'fixed by', 'learned that', 'discovered', 'example', 'code snippet',
+            'here\'s how', 'better way', 'trick', 'method', 'approach', 'technique',
+            'pattern', 'framework', 'tool', 'works well', 'avoid', 'don\'t do', 'instead of',
+            'remember to', 'must have', 'essential', 'useful', 'valuable', 'game changer',
+            'optimal', 'efficient', 'effective', 'strategy', 'important to note'
+        ]
+        
+        has_indicator = any(indicator in text for indicator in knowledge_indicators)
+        
+        # If no knowledge indicator, skip unless it contains multiple AI tool references
+        ai_tool_keywords = ['cursor', 'copilot', 'chatgpt', 'claude', 'gpt', 'ai', 'llm']
+        ai_tool_count = sum(1 for keyword in ai_tool_keywords if keyword in text)
+        
+        if not has_indicator and ai_tool_count < 2:
+            continue
+        
+        # Assign category
+        assigned_categories = []
+        for category, keywords in categories.items():
+            if any(keyword in text for keyword in keywords):
+                assigned_categories.append(category)
+        
+        # Only include if it belongs to at least one category
+        if assigned_categories:
+            # Process text to extract just the knowledge/tip part
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            
+            # Filter out conversational sentences
+            knowledge_sentences = []
+            for sentence in sentences:
+                # Skip short or conversational sentences
+                if len(sentence.split()) < 5:
+                    continue
+                if any(phrase in sentence.lower() for phrase in ['hi ', 'hello', 'hey ', 'thanks', 'thank you', 'how are you', 'what do you think', 'what about', 'lol', 'haha', 'ok', 'okay', 'sure', 'cool', 'nice']):
+                    continue
+                knowledge_sentences.append(sentence)
+            
+            # Only include if we have substantial knowledge content
+            if len(knowledge_sentences) > 0:
                 tips.append({
                     'sender': msg['sender'],
                     'date': msg['date'],
-                    'content': msg['message']
-                })
-            # If message is long enough, it might be a detailed explanation
-            elif len(text.split()) > 20:
-                tips.append({
-                    'sender': msg['sender'],
-                    'date': msg['date'],
-                    'content': msg['message']
+                    'content': ' '.join(knowledge_sentences),
+                    'categories': assigned_categories,
+                    'word_count': len(text.split())
                 })
     
-    return tips
+    # Sort by word count (rough measure of detail/value)
+    tips.sort(key=lambda x: x['word_count'], reverse=True)
+    
+    # Convert to categorized format
+    categorized = {
+        'AI Coding Tools': [],
+        'Prompt Engineering': [],
+        'AI Development Workflow': [],
+        'Coding Best Practices': [],
+        'AI Limitations & Workarounds': []
+    }
+    
+    for tip in tips:
+        for category in tip['categories']:
+            categorized[category].append({
+                'content': tip['content']
+            })
+    
+    return categorized
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -150,8 +339,13 @@ def index():
             return render_template('index.html', error="No file selected")
         
         if file:
+            # Create a unique folder for this upload
+            result_id = str(uuid.uuid4())
+            result_folder = os.path.join(app.config['RESULTS_FOLDER'], result_id)
+            os.makedirs(result_folder, exist_ok=True)
+            
             # Save the file to a temporary location
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'chat.txt')
+            filepath = os.path.join(result_folder, 'chat.txt')
             file.save(filepath)
             
             try:
@@ -165,51 +359,66 @@ def index():
                     title = fetch_url_title(url)
                     link_titles.append({'url': url, 'title': title})
                 
-                # Extract coding tips
-                coding_tips = extract_coding_tips(messages)
+                # Extract coding tips using OpenAI
+                categorized_tips = extract_ai_coding_knowledge_with_openai(messages)
                 
-                # Store results in session as JSON strings (for serialization)
-                session['link_titles'] = json.dumps([{'url': item['url'], 'title': item['title']} for item in link_titles])
-                session['coding_tips'] = json.dumps([{
-                    'sender': tip['sender'], 
-                    'date': tip['date'], 
-                    'content': tip['content']
-                } for tip in coding_tips])
-                session['message_count'] = len(messages)
+                # Store results in a JSON file
+                result_data = {
+                    'link_titles': link_titles,
+                    'categorized_tips': categorized_tips,
+                    'message_count': len(messages)
+                }
+                
+                # Save to file
+                result_path = os.path.join(result_folder, 'results.json')
+                with open(result_path, 'w') as f:
+                    json.dump(result_data, f)
+                
+                # Store only the ID in session
+                session['result_id'] = result_id
                 
                 return redirect(url_for('results'))
             
             except Exception as e:
+                # Clean up in case of error
+                shutil.rmtree(result_folder, ignore_errors=True)
                 return render_template('index.html', error=f"Error processing file: {str(e)}")
-            finally:
-                # Clean up the temporary file
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-    
+            
     return render_template('index.html')
 
 @app.route('/results')
 def results():
-    # Get results from session
-    link_titles_json = session.get('link_titles', '[]')
-    coding_tips_json = session.get('coding_tips', '[]')
-    message_count = session.get('message_count', 0)
+    # Get result ID from session
+    result_id = session.get('result_id')
     
-    # Parse JSON strings back to Python objects
-    link_titles = json.loads(link_titles_json)
-    coding_tips = json.loads(coding_tips_json)
-    
-    if not coding_tips and not link_titles:
+    if not result_id:
         return redirect(url_for('index'))
     
-    return render_template(
-        'results.html',
-        link_titles=link_titles,
-        coding_tips=coding_tips,
-        message_count=message_count
-    )
+    # Get results folder
+    result_folder = os.path.join(app.config['RESULTS_FOLDER'], result_id)
+    result_path = os.path.join(result_folder, 'results.json')
+    
+    if not os.path.exists(result_path):
+        return redirect(url_for('index'))
+    
+    try:
+        with open(result_path, 'r') as f:
+            data = json.load(f)
+        
+        link_titles = data.get('link_titles', [])
+        categorized_tips = data.get('categorized_tips', {})
+        message_count = data.get('message_count', 0)
+        
+        return render_template(
+            'results.html',
+            link_titles=link_titles,
+            categorized_tips=categorized_tips,
+            message_count=message_count
+        )
+    except Exception as e:
+        return redirect(url_for('index'))
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
     os.makedirs('templates', exist_ok=True)
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    app.run(debug=True, host='0.0.0.0', port=3000) 

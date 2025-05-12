@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Chat Analysis Results</title>
+    <title>AI Coding Knowledge Extraction</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -22,7 +22,7 @@
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
         h1 {
-            color: #4CAF50;
+            color: #6200EA;
             text-align: center;
             margin-bottom: 30px;
         }
@@ -31,6 +31,12 @@
             border-bottom: 2px solid #eee;
             padding-bottom: 10px;
             margin-top: 40px;
+        }
+        h3 {
+            color: #9C27B0;
+            margin-top: 25px;
+            padding-left: 8px;
+            border-left: 3px solid #9C27B0;
         }
         .summary {
             background: #E8F5E9;
@@ -56,22 +62,16 @@
         .back-btn:hover {
             background: #0b7dda;
         }
-        .tip-card {
+        .knowledge-card {
             background: #f9f9f9;
-            border-left: 4px solid #4CAF50;
+            border-left: 4px solid #6200EA;
             padding: 15px;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             border-radius: 4px;
         }
-        .tip-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-            color: #666;
-            font-size: 14px;
-        }
-        .tip-content {
+        .knowledge-content {
             white-space: pre-wrap;
+            line-height: 1.7;
         }
         .link-list {
             list-style-type: none;
@@ -100,6 +100,30 @@
             border-radius: 4px;
             color: #FF9800;
         }
+        .category-header {
+            background: #EDE7F6;
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            color: #673AB7;
+            font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .category-count {
+            background: #673AB7;
+            color: white;
+            border-radius: 20px;
+            padding: 3px 10px;
+            font-size: 14px;
+        }
+        .category-section {
+            margin-bottom: 30px;
+            background: #FAFAFA;
+            padding: 15px;
+            border-radius: 8px;
+        }
         @media print {
             .back-btn {
                 display: none;
@@ -117,28 +141,34 @@
 </head>
 <body>
     <div class="container">
-        <h1>WhatsApp Chat Analysis Results</h1>
+        <h1>AI Coding Knowledge Extraction</h1>
         
         <div class="summary">
-            Analyzed <span>{{ message_count }}</span> messages, found <span>{{ coding_tips|length }}</span> coding tips and <span>{{ link_titles|length }}</span> links.
+            Extracted <span>{{ categorized_tips | length }}</span> knowledge categories and 
+            <span>{{ link_titles|length }}</span> resource links from WhatsApp chat
         </div>
         
         <a href="/" class="back-btn">← Upload Another Chat</a>
         
-        <h2>Coding Tips & Knowledge</h2>
+        <h2>AI Coding Knowledge & Tips</h2>
         
-        {% if coding_tips %}
-            {% for tip in coding_tips %}
-            <div class="tip-card">
-                <div class="tip-header">
-                    <div class="sender">{{ tip.sender }}</div>
-                    <div class="date">{{ tip.date }}</div>
+        {% if categorized_tips %}
+            {% for category, tips in categorized_tips.items() %}
+            <div class="category-section">
+                <div class="category-header">
+                    <span>{{ category }}</span>
+                    <span class="category-count">{{ tips | length }} tips</span>
                 </div>
-                <div class="tip-content">{{ tip.content }}</div>
+                
+                {% for tip in tips %}
+                <div class="knowledge-card">
+                    <div class="knowledge-content">{{ tip.content }}</div>
+                </div>
+                {% endfor %}
             </div>
             {% endfor %}
         {% else %}
-            <div class="empty-message">No coding tips found in this chat.</div>
+            <div class="empty-message">No AI coding knowledge found in this chat.</div>
         {% endif %}
         
         <h2>Resource Links</h2>
