@@ -327,64 +327,72 @@ def extract_coding_tips_local(messages: List[Dict[str, str]]) -> Dict[str, List[
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == 'POST':
-        # Check if a file was uploaded
-        if 'file' not in request.files:
-            return render_template('index.html', error="No file selected")
+    try:
+        if request.method == 'POST':
+            # Check if a file was uploaded
+            if 'file' not in request.files:
+                return render_template('index.html', error="No file selected")
+            
+            file = request.files['file']
+            
+            # If user submits without selecting a file
+            if file.filename == '':
+                return render_template('index.html', error="No file selected")
+            
+            if file:
+                # Save the file to a temporary location
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'chat.txt')
+                file.save(filepath)
+                
+                try:
+                    # Parse the WhatsApp chat
+                    messages = parse_whatsapp_chat(filepath)
+                    
+                    # Extract URLs and their titles
+                    urls = extract_urls(messages)
+                    link_titles = []
+                    for url in urls:
+                        title = fetch_url_title(url)
+                        link_titles.append({'url': url, 'title': title})
+                    
+                    # Extract coding tips
+                    coding_tips = extract_ai_coding_knowledge_with_openai(messages)
+                    
+                    # Store results in session
+                    session['link_titles'] = link_titles
+                    session['coding_tips'] = coding_tips
+                    session['message_count'] = len(messages)
+                    
+                    return redirect(url_for('results'))
+                
+                except Exception as e:
+                    app.logger.error(f"Error processing file: {e}")
+                    return render_template('index.html', error=f"Error processing file: {str(e)}")
+                finally:
+                    # Clean up the temporary file
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
         
-        file = request.files['file']
-        
-        # If user submits without selecting a file
-        if file.filename == '':
-            return render_template('index.html', error="No file selected")
-        
-        if file:
-            # Create a unique folder for this upload
-            result_id = str(uuid.uuid4())
-            result_folder = os.path.join(app.config['RESULTS_FOLDER'], result_id)
-            os.makedirs(result_folder, exist_ok=True)
-            
-            # Save the file to a temporary location
-            filepath = os.path.join(result_folder, 'chat.txt')
-            file.save(filepath)
-            
-            try:
-                # Parse the WhatsApp chat
-                messages = parse_whatsapp_chat(filepath)
-                
-                # Extract URLs and their titles
-                urls = extract_urls(messages)
-                link_titles = []
-                for url in urls:
-                    title = fetch_url_title(url)
-                    link_titles.append({'url': url, 'title': title})
-                
-                # Extract coding tips using OpenAI
-                categorized_tips = extract_ai_coding_knowledge_with_openai(messages)
-                
-                # Store results in a JSON file
-                result_data = {
-                    'link_titles': link_titles,
-                    'categorized_tips': categorized_tips,
-                    'message_count': len(messages)
-                }
-                
-                # Save to file
-                result_path = os.path.join(result_folder, 'results.json')
-                with open(result_path, 'w') as f:
-                    json.dump(result_data, f)
-                
-                # Store only the ID in session
-                session['result_id'] = result_id
-                
-                return redirect(url_for('results'))
-            
-            except Exception as e:
-                # Clean up in case of error
-                shutil.rmtree(result_folder, ignore_errors=True)
-                return render_template('index.html', error=f"Error processing file: {str(e)}")
-            
-    return render_template('index.html')
+        # Try to render the template
+        return render_template('index.html')
+    
+    except Exception as e:
+        app.logger.error(f"Error rendering index template: {e}")
+        # Fallback HTML if template rendering fails
+        return f"""
+        <html>
+        <head><title>WhatsApp Chat Analyzer</title></head>
+        <body>
+            <h1>WhatsApp Chat Analyzer</h1>
+            <p>Upload your WhatsApp chat export (.txt file) to extract coding tips and links.</p>
+            <p style="color: red;">Note: Template rendering failed. Please check server logs.</p>
+            <form method="POST" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".txt"><br><br>
+                <button type="submit">Analyze Chat</button>
+            </form>
+        </body>
+        </html>
+        """
 
 @app.route('/results')
 def results():
@@ -417,6 +425,67 @@ def results():
         )
     except Exception as e:
         return redirect(url_for('index'))
+
+@app.route('/debug')
+def debug():
+    """A simple route for debugging that doesn't rely on templates."""
+    info = {
+        'env_vars': {k: '***' if k == 'OPENAI_API_KEY' else v for k, v in os.environ.items()},
+        'template_dir_exists': os.path.exists(os.path.join(os.path.dirname(__file__), 'templates')),
+        'working_dir': os.getcwd(),
+        'files_in_dir': os.listdir('.')
+    }
+    
+    html = f"""
+    <html>
+    <head><title>Debug Info</title></head>
+    <body>
+        <h1>Debug Information</h1>
+        <h2>Working Directory</h2>
+        <p>{info['working_dir']}</p>
+        
+        <h2>Files in Root</h2>
+        <ul>
+            {''.join([f'<li>{f}</li>' for f in info['files_in_dir']])}
+        </ul>
+        
+        <h2>Templates Directory</h2>
+        <p>Exists: {info['template_dir_exists']}</p>
+    </body>
+    </html>
+    """
+    
+    return html
+
+# Add Flask error handler for 500 errors
+@app.errorhandler(500)
+def internal_error(error):
+    return """
+    <html>
+    <head><title>Error</title></head>
+    <body>
+        <h1>Internal Server Error</h1>
+        <p>The server encountered an unexpected error. This could be due to:</p>
+        <ul>
+            <li>Missing OPENAI_API_KEY environment variable</li>
+            <li>Issues with template directories</li>
+            <li>File permission problems</li>
+        </ul>
+        <p>Please check the server logs for more details.</p>
+    </body>
+    </html>
+    """, 500
+
+# Ensure templates directory exists
+@app.before_first_request
+def ensure_templates_directory():
+    try:
+        os.makedirs('templates', exist_ok=True)
+        # Verify the templates can be found
+        if not os.path.exists(os.path.join(os.path.dirname(__file__), 'templates')):
+            app.logger.error("Templates directory not found!")
+    except Exception as e:
+        app.logger.error(f"Error ensuring templates directory: {e}")
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
