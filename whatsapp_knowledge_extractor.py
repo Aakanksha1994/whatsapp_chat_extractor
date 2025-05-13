@@ -7,7 +7,8 @@ from transformers import pipeline
 from typing import List, Dict, Any
 from collections import defaultdict
 import os
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import SentenceTransformer
+import torch.nn.functional as F
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -98,7 +99,7 @@ def filter_relevant_messages(messages: List[Dict[str, str]], learning_objective:
     relevant = []
     for msg in messages:
         msg_emb = model.encode(msg['message'], convert_to_tensor=True)
-        sim = util.pytorch_cos_sim(lo_emb, msg_emb).item()
+        sim = F.cosine_similarity(lo_emb.unsqueeze(0), msg_emb.unsqueeze(0)).item()
         if sim >= threshold:
             relevant.append(msg)
     return relevant
