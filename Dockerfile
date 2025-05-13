@@ -4,10 +4,10 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --upgrade setuptools
-RUN pip install --no-cache-dir --no-deps -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 3000
+EXPOSE $PORT
 
-CMD ["gunicorn", "simple_app:app", "--bind", "0.0.0.0:3000"]
+CMD gunicorn app:app --bind 0.0.0.0:$PORT
