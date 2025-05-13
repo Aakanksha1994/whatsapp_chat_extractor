@@ -68,11 +68,17 @@
         .btn-secondary {
             background: #2196F3;
         }
+        .btn-ai {
+            background: #00C853;
+        }
         .btn:hover {
             background: #4a00b2;
         }
         .btn-secondary:hover {
             background: #0b7dda;
+        }
+        .btn-ai:hover {
+            background: #009624;
         }
         .error {
             padding: 15px;
@@ -114,6 +120,26 @@
         .markdown-form p {
             margin-bottom: 15px;
         }
+        .checkbox-group {
+            margin-bottom: 15px;
+        }
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        .checkbox-label input {
+            margin-right: 10px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            font-size: 12px;
+            border-radius: 4px;
+            background: #E91E63;
+            color: white;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -133,6 +159,17 @@
                     <label for="file">Select WhatsApp Chat Export (.txt)</label>
                     <input type="file" id="file" name="file" accept=".txt" class="input-file" required>
                 </div>
+                
+                {% if openai_available %}
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="use_openai" value="true">
+                        Use OpenAI for enhanced extraction <span class="badge">AI-Powered</span>
+                    </label>
+                    <p style="color: #666; font-size: 14px; margin-top: 5px;">This will use OpenAI's API to provide better categorization and insight extraction.</p>
+                </div>
+                {% endif %}
+                
                 <div class="form-options">
                     <button type="submit" class="btn">Process & View in Browser</button>
                 </div>
@@ -147,6 +184,16 @@
                     <label for="file-md">Select WhatsApp Chat Export (.txt)</label>
                     <input type="file" id="file-md" name="file" accept=".txt" class="input-file" required>
                 </div>
+                
+                {% if openai_available %}
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="use_openai" value="true">
+                        Use OpenAI for enhanced extraction <span class="badge">AI-Powered</span>
+                    </label>
+                </div>
+                {% endif %}
+                
                 <button type="submit" class="btn btn-secondary">Download Markdown</button>
             </form>
         </div>

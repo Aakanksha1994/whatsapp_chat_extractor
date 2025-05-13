@@ -13,10 +13,57 @@ from collections import defaultdict
 import html
 import json
 import uuid
+import socket
 
-# Import our simplified chat parsing functions instead
-from whatsapp_knowledge_extractor_simple import parse_whatsapp_chat, extract_urls, extract_coding_tips, fetch_url_title, categorize_tips, export_to_markdown
+# Try to import advanced module, fall back to simple if it fails
+try:
+    from whatsapp_knowledge_extractor import parse_whatsapp_chat, extract_urls, extract_coding_tips, fetch_url_title, categorize_tips
+    print("Using advanced ML-based extractor")
+except ImportError:
+    print("Advanced extractor unavailable, falling back to simple extractor")
+    from whatsapp_knowledge_extractor_simple import parse_whatsapp_chat, extract_urls, extract_coding_tips, fetch_url_title, categorize_tips
 
+# Import OpenAI-specific function for optional OpenAI processing
+try:
+    from whatsapp_knowledge_extractor_openai import extract_knowledge_with_openai, generate_markdown_from_knowledge
+    OPENAI_AVAILABLE = True
+    print("OpenAI integration available")
+except ImportError:
+    OPENAI_AVAILABLE = False
+    print("OpenAI integration not available")
+
+# Function to export to markdown
+def export_to_markdown(categorized_tips, urls, link_titles):
+    """Create a Markdown export of the categorized tips and resources."""
+    markdown = "# AI Coding Knowledge Extraction\n\n"
+    
+    # Add tips by category
+    for category, tips in categorized_tips.items():
+        markdown += f"## {category}\n"
+        markdown += f"{len(tips)} tips\n\n"
+        
+        for tip in tips:
+            # Clean up the tip text
+            content = tip['content'].strip()
+            markdown += f"- {content}\n"
+        
+        markdown += "\n"
+    
+    # Add resource links
+    if urls:
+        markdown += "## Useful Resources\n\n"
+        url_dict = {item['url']: item['title'] for item in link_titles}
+        
+        for url in urls:
+            title = url_dict.get(url, url)
+            if title == url:
+                markdown += f"- [{url}]({url})\n"
+            else:
+                markdown += f"- [{title}]({url})\n"
+                
+    return markdown
+
+# Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
@@ -142,25 +189,37 @@ def index():
             # Parse the WhatsApp chat
             messages = parse_whatsapp_chat(filepath)
             
-            # Extract URLs and their titles
-            urls = extract_urls(messages)
-            link_titles = []
-            for url in urls:
-                title = fetch_url_title(url)
-                link_titles.append({'url': url, 'title': title})
-            
-            # Extract coding tips
-            coding_tips = extract_coding_tips(messages)
-            
-            # Categorize the coding tips
-            categorized_tips = categorize_tips(coding_tips)
-            
-            # Generate Markdown directly
-            markdown_content = export_to_markdown(
-                categorized_tips,
-                urls,
-                link_titles
-            )
+            # Use OpenAI if available and requested
+            if OPENAI_AVAILABLE and request.form.get('use_openai'):
+                urls = extract_urls(messages)
+                link_titles = []
+                for url in urls:
+                    title = fetch_url_title(url)
+                    link_titles.append({'url': url, 'title': title})
+                
+                # Extract with OpenAI
+                knowledge = extract_knowledge_with_openai(messages)
+                markdown_content = generate_markdown_from_knowledge(knowledge, urls, link_titles)
+            else:
+                # Extract URLs and their titles
+                urls = extract_urls(messages)
+                link_titles = []
+                for url in urls:
+                    title = fetch_url_title(url)
+                    link_titles.append({'url': url, 'title': title})
+                
+                # Extract coding tips
+                coding_tips = extract_coding_tips(messages)
+                
+                # Categorize the coding tips
+                categorized_tips = categorize_tips(coding_tips)
+                
+                # Generate Markdown directly
+                markdown_content = export_to_markdown(
+                    categorized_tips,
+                    urls,
+                    link_titles
+                )
             
             # Return as a downloadable file
             return Response(
@@ -180,13 +239,13 @@ def index():
     if request.method == 'POST':
         # Check if a file was uploaded
         if 'file' not in request.files:
-            return render_template('index.html', error="No file selected")
+            return render_template('index.html', error="No file selected", openai_available=OPENAI_AVAILABLE)
         
         file = request.files['file']
         
         # If user submits without selecting a file
         if file.filename == '':
-            return render_template('index.html', error="No file selected")
+            return render_template('index.html', error="No file selected", openai_available=OPENAI_AVAILABLE)
         
         if file:
             # Save the file to a temporary location
@@ -197,33 +256,56 @@ def index():
                 # Process with focus on technical content only
                 messages = parse_whatsapp_chat(filepath)
                 
-                # Extract URLs and their titles
-                urls = extract_urls(messages)
-                link_titles = []
-                for url in urls:
-                    title = fetch_url_title(url)
-                    link_titles.append({'url': url, 'title': title})
-                
-                # Extract only technical coding tips
-                coding_tips = extract_coding_tips(messages)
-                
-                # Categorize the coding tips
-                categorized_tips = categorize_tips(coding_tips)
-                
-                # Create a simple summary
-                chat_summary = better_summarize(messages)
-                
-                # Create a unique ID for this result
-                result_id = str(uuid.uuid4())
-                
-                # Store results in a temporary file instead of session
-                results = {
-                    'link_titles': link_titles,
-                    'coding_tips': coding_tips,
-                    'categorized_tips': categorized_tips,
-                    'message_count': len(messages),
-                    'chat_summary': chat_summary
-                }
+                # Use OpenAI if available and requested
+                if OPENAI_AVAILABLE and request.form.get('use_openai'):
+                    # Extract URLs and their titles
+                    urls = extract_urls(messages)
+                    link_titles = []
+                    for url in urls:
+                        title = fetch_url_title(url)
+                        link_titles.append({'url': url, 'title': title})
+                    
+                    # Extract with OpenAI
+                    knowledge = extract_knowledge_with_openai(messages)
+                    
+                    # Create a unique ID for this result
+                    result_id = str(uuid.uuid4())
+                    
+                    # Store results in a temporary file
+                    results = {
+                        'link_titles': link_titles,
+                        'categorized_tips': knowledge['categories'],
+                        'message_count': len(messages),
+                        'chat_summary': knowledge['summary']
+                    }
+                else:
+                    # Extract URLs and their titles
+                    urls = extract_urls(messages)
+                    link_titles = []
+                    for url in urls:
+                        title = fetch_url_title(url)
+                        link_titles.append({'url': url, 'title': title})
+                    
+                    # Extract only technical coding tips
+                    coding_tips = extract_coding_tips(messages)
+                    
+                    # Categorize the coding tips
+                    categorized_tips = categorize_tips(coding_tips)
+                    
+                    # Create a simple summary
+                    chat_summary = better_summarize(messages)
+                    
+                    # Create a unique ID for this result
+                    result_id = str(uuid.uuid4())
+                    
+                    # Store results in a temporary file
+                    results = {
+                        'link_titles': link_titles,
+                        'coding_tips': coding_tips,
+                        'categorized_tips': categorized_tips,
+                        'message_count': len(messages),
+                        'chat_summary': chat_summary
+                    }
                 
                 # Save to a temporary file
                 result_file = os.path.join(app.config['RESULTS_FOLDER'], f"{result_id}.json")
@@ -236,13 +318,13 @@ def index():
                 return redirect(url_for('results'))
             
             except Exception as e:
-                return render_template('index.html', error=f"Error processing file: {str(e)}")
+                return render_template('index.html', error=f"Error processing file: {str(e)}", openai_available=OPENAI_AVAILABLE)
             finally:
                 # Clean up the temporary file
                 if os.path.exists(filepath):
                     os.remove(filepath)
     
-    return render_template('index.html')
+    return render_template('index.html', openai_available=OPENAI_AVAILABLE)
 
 @app.route('/results')
 def results():
@@ -264,13 +346,32 @@ def results():
     return render_template(
         'results.html',
         link_titles=results['link_titles'],
-        coding_tips=results['coding_tips'],
+        coding_tips=results.get('coding_tips', []),  # May not exist in OpenAI version
         categorized_tips=results['categorized_tips'],
         message_count=results['message_count'],
         chat_summary=results['chat_summary']
     )
 
+def find_available_port(preferred_ports=[8888, 8080, 5000, 3000]):
+    """Try to find an available port from the list of preferred ports."""
+    for port in preferred_ports:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(('localhost', port))
+        sock.close()
+        if result != 0:  # Port is available
+            return port
+    
+    # If no preferred port is available, find a random available port
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(('localhost', 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
 if __name__ == "__main__":
     import os
-    port = int(os.environ.get("PORT", 8888))
+    preferred_port = int(os.environ.get("PORT", 8888))
+    port = find_available_port([preferred_port, 8080, 5000, 3000])
+    print(f"Starting server on port {port}")
     app.run(host="0.0.0.0", port=port, debug=True) 

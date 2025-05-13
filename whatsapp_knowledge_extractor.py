@@ -3,13 +3,21 @@ import json
 import argparse
 import requests
 from bs4 import BeautifulSoup
-from transformers import pipeline
 from typing import List, Dict, Any
 from collections import defaultdict
 import os
-from sentence_transformers import SentenceTransformer
-import torch.nn.functional as F
 from dotenv import load_dotenv
+
+# Try to import advanced ML libraries but handle gracefully if they fail
+try:
+    from transformers import pipeline
+    from sentence_transformers import SentenceTransformer
+    import torch.nn.functional as F
+    ML_AVAILABLE = True
+    print("Advanced ML libraries available. Using enhanced analysis.")
+except ImportError:
+    ML_AVAILABLE = False
+    print("Advanced ML libraries not available. Falling back to simple analysis.")
 
 load_dotenv()
 
@@ -87,141 +95,223 @@ def extract_urls(messages: List[Dict[str, str]]) -> List[str]:
         urls.update(found)
     return list(urls)
 
-# 3. Filter messages by learning objective
-
-def filter_relevant_messages(messages: List[Dict[str, str]], learning_objective: str, threshold: float = 0.4) -> List[Dict[str, str]]:
-    """
-    Use sentence-transformers to semantically filter messages relevant to the learning objective.
-    """
-    print('Loading embedding model for semantic filtering...')
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    lo_emb = model.encode(learning_objective, convert_to_tensor=True)
-    relevant = []
+# 3. Determine if a message is a coding tip - ML version
+def extract_coding_tips_ml(messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """Extract coding tips using ML models for better accuracy."""
+    model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+    
+    # Define templates for coding tips
+    templates = [
+        "Here's a coding tip:",
+        "I learned this programming technique:",
+        "When using AI, you should:",
+        "A good practice in software development is:",
+        "This is how you solve this coding problem:",
+        "The best way to use this tool is:",
+        "When working with LLMs, remember to:"
+    ]
+    
+    # Encode templates
+    template_embeddings = model.encode(templates, convert_to_tensor=True)
+    
+    tips = []
     for msg in messages:
-        msg_emb = model.encode(msg['message'], convert_to_tensor=True)
-        sim = F.cosine_similarity(lo_emb.unsqueeze(0), msg_emb.unsqueeze(0)).item()
-        if sim >= threshold:
-            relevant.append(msg)
-    return relevant
+        # Skip very short messages or system messages
+        if len(msg['message'].split()) < 5 or msg['sender'] == 'SYSTEM':
+            continue
+        
+        # Skip greetings and common phrases
+        greetings = ['hello', 'hi', 'hey', 'good morning', 'thanks', 'thank you', 'bye']
+        if any(greeting in msg['message'].lower() for greeting in greetings) and len(msg['message'].split()) < 10:
+            continue
+        
+        # Embed the message
+        try:
+            msg_embedding = model.encode(msg['message'], convert_to_tensor=True)
+            
+            # Calculate similarity with templates
+            similarities = F.cosine_similarity(msg_embedding.unsqueeze(0), template_embeddings)
+            max_similarity = similarities.max().item()
+            
+            # If similar enough to any template, consider it a tip
+            if max_similarity > 0.3:  # Threshold can be adjusted
+                tips.append({
+                    'content': msg['message'],
+                    'similarity': max_similarity
+                })
+        except Exception as e:
+            print(f"Error processing message: {e}")
+            continue
+    
+    # Sort by similarity and return
+    return sorted(tips, key=lambda x: x.get('similarity', 0), reverse=True)
 
-# 4. Fetch and summarize web content
+# 3. Determine if a message is a coding tip - simple version
+def extract_coding_tips_simple(messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """Extract coding tips and guidance from messages using keyword matching."""
+    # Technical keywords to keep
+    technical_keywords = [
+        'code', 'coding', 'programming', 'developer', 'software', 'web', 'app', 
+        'javascript', 'python', 'java', 'html', 'css', 'react', 'angular', 'vue',
+        'node', 'api', 'git', 'github', 'stack', 'framework', 'library', 'function',
+        'algorithm', 'database', 'sql', 'backend', 'frontend', 'fullstack', 'debug',
+        'compiler', 'interpreter', 'syntax', 'variable', 'loop', 'condition', 'class',
+        'object', 'method', 'AI', 'cursor', 'IDE', 'editor', 'build', 'deploy', 'server',
+        'client', 'terminal', 'command', 'prompt', 'install', 'package', 'dependency',
+        'npm', 'pip', 'yarn', 'docker', 'kubernetes', 'cloud', 'AWS', 'Azure', 'GCP',
+        'gpt', 'claude', 'openai', 'llm', 'ml', 'model', 'transformer', 'bert', 'nlp',
+        'whisper', 'bard', 'gemini', 'anthropic', 'grok', 'chatgpt', 'llama', 'mistral',
+        'huggingface', 'pytorch', 'tensorflow', 'api', 'token', 'completion', 'embedding'
+    ]
+    
+    # Words/phrases to ignore (social, logistical, etc.)
+    ignore_phrases = [
+        'hello', 'hi ', 'hey', 'how are you', 'good morning', 'good afternoon', 'good evening',
+        'thanks', 'thank you', 'appreciate it', 'cool', 'awesome', 'nice', 'great',
+        'see you', 'talk later', 'bye', 'goodbye', 'later', 'let me know',
+        'meeting', 'schedule', 'available', 'tomorrow', 'today', 'yesterday',
+        'call me', 'phone', 'zoom', 'google meet', 'teams', 'lunch', 'dinner',
+        'okay', 'ok', 'sure', 'got it', 'understood', 'makes sense', 'sounds good',
+        'lol', 'haha'
+    ]
+    
+    tips = []
+    
+    for msg in messages:
+        text = msg['message'].lower()
+        
+        # Skip if too short or just a URL
+        if len(text.split()) < 3 or (text.startswith('http') and len(text.split()) < 5):
+            continue
+            
+        # Skip if it contains ignore phrases and is short
+        if any(phrase in text for phrase in ignore_phrases) and len(text.split()) < 15:
+            continue
+        
+        # Only keep if it contains technical keywords
+        if any(keyword.lower() in text for keyword in technical_keywords):
+            # Longer messages or those containing specific tip indicators
+            if len(text.split()) > 15 or any(phrase in text for phrase in ['tip', 'advice', 'how to', 'should', 'try', 'recommend', 'suggestion', 'best practice']):
+                tips.append({
+                    'content': msg['message']
+                })
+    
+    return tips
 
-def fetch_url_content(url: str) -> str:
+# Wrapper function to choose the right implementation
+def extract_coding_tips(messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """Extract coding tips using the best available method."""
+    if ML_AVAILABLE:
+        try:
+            return extract_coding_tips_ml(messages)
+        except Exception as e:
+            print(f"ML-based extraction failed: {e}")
+            print("Falling back to simple extraction")
+            return extract_coding_tips_simple(messages)
+    else:
+        return extract_coding_tips_simple(messages)
+
+# 4. Fetch URL title
+def fetch_url_title(url: str) -> str:
+    """Fetch the title of a webpage."""
     try:
-        resp = requests.get(url, timeout=10)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        resp = requests.get(url, headers=headers, timeout=5)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, 'html.parser')
-        # Get visible text
-        texts = soup.stripped_strings
-        content = ' '.join(texts)
-        return content[:5000]  # Limit to 5000 chars for summarization
+        title = soup.title.string if soup.title else url
+        return title.strip()
     except Exception as e:
-        return f"[Error fetching {url}: {e}]"
+        print(f"Error fetching title for {url}: {e}")
+        return url
 
-# 5. Summarize content using transformers
-
-def get_summarizer():
-    return pipeline('summarization', model='facebook/bart-large-cnn')
-
-def summarize_text(text: str, summarizer) -> str:
-    try:
-        # BART has a max token limit, so chunk if needed
-        max_chunk = 1024
-        if len(text) <= max_chunk:
-            summary = summarizer(text, max_length=130, min_length=30, do_sample=False)[0]['summary_text']
-            return summary
-        else:
-            # Chunk and summarize each, then join
-            chunks = [text[i:i+max_chunk] for i in range(0, len(text), max_chunk)]
-            summaries = [summarizer(chunk, max_length=130, min_length=30, do_sample=False)[0]['summary_text'] for chunk in chunks]
-            return '\n'.join(summaries)
-    except Exception as e:
-        return f"[Error summarizing: {e}]"
-
-# 6. Categorize knowledge points
-
-def categorize_knowledge(messages: List[Dict[str, str]]) -> Dict[str, List[str]]:
-    categories = defaultdict(list)
-    for msg in messages:
-        text = msg['message']
-        # Heuristic: categorize by keywords
-        if any(word in text.lower() for word in ['tip', 'trick', 'advice', 'suggestion']):
-            categories['Tips'].append(text)
-        elif any(word in text.lower() for word in ['resource', 'link', 'read', 'watch', 'reference']):
-            categories['Resources'].append(text)
-        elif any(word in text.lower() for word in ['example', 'case', 'demo', 'sample']):
-            categories['Examples'].append(text)
-        else:
-            categories['Other'].append(text)
-    return categories
-
-# 7. Generate markdown report
-
-def generate_markdown_report(categories: Dict[str, List[str]], url_summaries: Dict[str, str], learning_objective: str) -> str:
-    md = f"# Knowledge Extracted for: {learning_objective}\n\n"
-    md += "## Key Knowledge Points\n"
-    for cat, items in categories.items():
-        md += f"\n### {cat}\n"
-        for item in items:
-            md += f"- {item}\n"
-    md += "\n## Resource Summaries\n"
-    for url, summary in url_summaries.items():
-        md += f"\n### [{url}]({url})\n"
-        md += f"{summary}\n"
-    return md
-
-def summarize_all_messages(messages: List[Dict[str, str]], summarizer) -> str:
-    """
-    Summarize the entire chat messages as a single block of text.
-    """
-    all_text = '\n'.join([msg['message'] for msg in messages])
-    return summarize_text(all_text, summarizer)
-
-# 8. Main orchestration
+# 5. Categorize the coding tips
+def categorize_tips(tips: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Categorize coding tips into meaningful groups."""
+    # Define categories and their keywords
+    categories = {
+        "AI Coding Tools": ["cursor", "vscode", "visual studio", "code editor", "IDE", "grok", "claude", "gpt", "llm tool", "copilot", "codewhisperer", "sourcegraph", "github"],
+        "Prompt Engineering": ["prompt", "instruction", "token", "context window", "whisper", "prompt engineering", "prompt design", "system prompt", "conversation", "chat history", "token", "embedding"],
+        "AI Development Workflow": ["workflow", "steps", "process", "procedure", "methodology", "development", "deploy", "product", "architecture", "plan", "standard operating procedure", "SOP"],
+        "Coding Best Practices": ["best practice", "pattern", "tdd", "test driven", "refactor", "clean code", "documentation", "comment", "naming", "structure", "bug", "debug"],
+        "AI Limitations & Workarounds": ["limitation", "problem", "issue", "hallucination", "error", "mistake", "workaround", "solution", "fix", "solve", "rate limit", "token limit"],
+        "Machine Learning & Models": ["model", "train", "fine-tune", "dataset", "parameter", "weight", "embedding", "vector", "huggingface", "pytorch", "tensorflow", "bert", "transformer"]
+    }
+    
+    # Default category for tips that don't match any specific category
+    default_category = "General AI Coding Tips"
+    
+    # Initialize result dictionary
+    categorized = defaultdict(list)
+    
+    # Categorize each tip
+    for tip in tips:
+        content = tip['content'].lower()
+        matched = False
+        
+        # Try to find a matching category
+        for category, keywords in categories.items():
+            if any(keyword.lower() in content for keyword in keywords):
+                categorized[category].append(tip)
+                matched = True
+                break
+        
+        # Use default category if no match found
+        if not matched:
+            categorized[default_category].append(tip)
+    
+    return dict(categorized)
 
 def main():
-    parser = argparse.ArgumentParser(description='WhatsApp Knowledge Extractor')
-    parser.add_argument('chat_file', help='Path to WhatsApp chat export (.txt)')
-    parser.add_argument('--output', default='knowledge_report.md', help='Output markdown file')
-    parser.add_argument('--use_openai', action='store_true', help='Use OpenAI for semantic filtering')
-    parser.add_argument('--api_key', help='OpenAI API key')
+    parser = argparse.ArgumentParser(description='Extract coding knowledge from WhatsApp chat exports')
+    parser.add_argument('chat_file', help='WhatsApp chat export file (.txt)')
+    parser.add_argument('--output', help='Output file for extracted knowledge')
+    parser.add_argument('--use_openai', action='store_true', help='Use OpenAI for better extraction')
+    parser.add_argument('--api_key', help='OpenAI API key (if not set in environment)')
     args = parser.parse_args()
-
-    if not os.path.exists(args.chat_file):
-        print(f"Error: File {args.chat_file} not found.")
-        return
-
-    print('Parsing chat...')
+    
+    # Process the chat file
     messages = parse_whatsapp_chat(args.chat_file)
-    print(f"Parsed {len(messages)} messages.")
-
-    print('Extracting URLs...')
+    
+    # Extract URLs
     urls = extract_urls(messages)
-    print(f"Found {len(urls)} URLs.")
-
-    print('Fetching and summarizing URLs...')
-    url_summaries = {}
-    summarizer = get_summarizer()
+    
+    # Get URL titles
+    url_titles = []
     for url in urls:
-        print(f"Fetching: {url}")
-        content = fetch_url_content(url)
-        print(f"Summarizing: {url}")
-        summary = summarize_text(content, summarizer)
-        url_summaries[url] = summary
+        title = fetch_url_title(url)
+        url_titles.append({'url': url, 'title': title})
+    
+    # Extract coding tips
+    tips = extract_coding_tips(messages)
+    
+    # Categorize tips
+    categorized = categorize_tips(tips)
+    
+    # Create output
+    output = {
+        'message_count': len(messages),
+        'url_count': len(urls),
+        'tip_count': len(tips),
+        'urls': urls,
+        'url_titles': url_titles,
+        'tips': tips,
+        'categorized': categorized
+    }
+    
+    # Save to file if specified
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8') as f:
+            json.dump(output, f, ensure_ascii=False, indent=2)
+        print(f"Results saved to {args.output}")
+    else:
+        # Print summary to console
+        print(f"Found {len(messages)} messages, {len(urls)} URLs, and {len(tips)} coding tips")
+        print("\nCategories:")
+        for category, tips_list in categorized.items():
+            print(f"- {category}: {len(tips_list)} tips")
 
-    print('Summarizing all chat messages...')
-    chat_summary = summarize_all_messages(messages, summarizer)
-
-    print('Categorizing knowledge...')
-    categories = categorize_knowledge(messages)
-
-    print('Generating markdown report...')
-    md_report = f"# WhatsApp Chat Summary\n\n"
-    md_report += f"## Overall Chat Summary\n\n{chat_summary}\n\n"
-    md_report += generate_markdown_report(categories, url_summaries, "(Full Chat)")
-    with open(args.output, 'w', encoding='utf-8') as f:
-        f.write(md_report)
-    print(f"Report saved to {args.output}")
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main() 
