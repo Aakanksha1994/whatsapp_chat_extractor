@@ -110,7 +110,7 @@ def fetch_url_title(url: str) -> str:
         return url
 
 # Extract knowledge with OpenAI
-def extract_knowledge_with_openai(messages: List[Dict[str, str]]) -> Dict[str, Any]:
+def extract_knowledge_with_openai(messages: List[Dict[str, str]], objective: str = "AI coding and development") -> Dict[str, Any]:
     """Use OpenAI to extract structured knowledge from chat messages."""
     # Prepare the chat content for OpenAI
     chat_content = "\n\n".join([f"{msg['sender']}: {msg['message']}" for msg in messages])
@@ -120,36 +120,36 @@ def extract_knowledge_with_openai(messages: List[Dict[str, str]]) -> Dict[str, A
         chat_content = chat_content[:100000] + "\n...[truncated]"
     
     try:
-        # First, ask OpenAI to identify and categorize technical content
-        system_prompt = """
-        Extract only technical tips, tools, and resources from this WhatsApp chat, related to AI coding.
-        Skip greetings, logistics, jokes, and small talk. Focus only on valuable technical knowledge.
+        # Define the system prompt with the provided format
+        system_prompt = f"""
+        You are an AI assistant helping extract **only the valuable learning content** from WhatsApp chats. 
+        Focus on tips, resources, insights, tools, links, or questions related to the objective: "{objective}".
+
+        Ignore:
+        - greetings, social messages, logistics
+        - chatty responses like "okay", "cool", "thank you"
+
+        Structure your answer as:
+        - Summary of Key Learnings
+        - List of Extracted Tips or Techniques
+        - Mention any useful tools or resources
+
+        Be brief, clear, and structured.
         
-        Categorize the knowledge into these categories:
-        1. AI Coding Tools
-        2. Prompt Engineering
-        3. AI Development Workflow
-        4. Coding Best Practices
-        5. AI Limitations & Workarounds
-        6. Machine Learning & Models
-        7. Useful Resources (links)
-        
-        For each category, list the specific tips or knowledge points found in the chat.
         Format your response as structured JSON with this schema:
-        {
-            "categories": {
-                "AI Coding Tools": [
+        {{
+            "categories": {{
+                "Tips and Techniques": [
                     "tip 1",
                     "tip 2"
                 ],
-                "Prompt Engineering": [
-                    "tip 1",
-                    "tip 2"
-                ],
-                ...
-            },
+                "Tools and Resources": [
+                    "resource 1",
+                    "resource 2"
+                ]
+            }},
             "summary": "A concise summary of the main technical topics and value from this chat"
-        }
+        }}
         """
         
         response = openai.chat.completions.create(

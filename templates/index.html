@@ -168,6 +168,12 @@
                     </label>
                     <p style="color: #666; font-size: 14px; margin-top: 5px;">This will use OpenAI's API to provide better categorization and insight extraction.</p>
                 </div>
+                
+                <div class="form-group">
+                    <label for="objective">Learning Objective (what are you trying to extract?)</label>
+                    <input type="text" id="objective" name="objective" class="input-file" style="background: #fff;" placeholder="AI coding and development" value="AI coding and development">
+                    <p style="color: #666; font-size: 14px; margin-top: 5px;">Specify what content you're looking for (e.g., "Python development", "AI prompt engineering", "workflow tips")</p>
+                </div>
                 {% endif %}
                 
                 <div class="form-options">
@@ -191,6 +197,11 @@
                         <input type="checkbox" name="use_openai" value="true">
                         Use OpenAI for enhanced extraction <span class="badge">AI-Powered</span>
                     </label>
+                </div>
+                
+                <div class="form-group">
+                    <label for="objective-md">Learning Objective</label>
+                    <input type="text" id="objective-md" name="objective" class="input-file" style="background: #fff;" placeholder="AI coding and development" value="AI coding and development">
                 </div>
                 {% endif %}
                 

@@ -197,8 +197,11 @@ def index():
                     title = fetch_url_title(url)
                     link_titles.append({'url': url, 'title': title})
                 
+                # Get learning objective if provided
+                objective = request.form.get('objective', "AI coding and development")
+                
                 # Extract with OpenAI
-                knowledge = extract_knowledge_with_openai(messages)
+                knowledge = extract_knowledge_with_openai(messages, objective)
                 markdown_content = generate_markdown_from_knowledge(knowledge, urls, link_titles)
             else:
                 # Extract URLs and their titles
@@ -265,8 +268,11 @@ def index():
                         title = fetch_url_title(url)
                         link_titles.append({'url': url, 'title': title})
                     
+                    # Get learning objective if provided
+                    objective = request.form.get('objective', "AI coding and development")
+                    
                     # Extract with OpenAI
-                    knowledge = extract_knowledge_with_openai(messages)
+                    knowledge = extract_knowledge_with_openai(messages, objective)
                     
                     # Create a unique ID for this result
                     result_id = str(uuid.uuid4())
