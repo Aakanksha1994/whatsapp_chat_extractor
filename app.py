@@ -15,13 +15,9 @@ import json
 import uuid
 import socket
 
-# Try to import advanced module, fall back to simple if it fails
-try:
-    from whatsapp_knowledge_extractor import parse_whatsapp_chat, extract_urls, extract_coding_tips, fetch_url_title, categorize_tips
-    print("Using advanced ML-based extractor")
-except ImportError:
-    print("Advanced extractor unavailable, falling back to simple extractor")
-    from whatsapp_knowledge_extractor_simple import parse_whatsapp_chat, extract_urls, extract_coding_tips, fetch_url_title, categorize_tips
+# Import the simple version directly
+from whatsapp_knowledge_extractor import parse_whatsapp_chat, extract_urls, extract_coding_tips, fetch_url_title, categorize_tips
+print("Using simple keyword-based extractor")
 
 # Import OpenAI-specific function for optional OpenAI processing
 try:

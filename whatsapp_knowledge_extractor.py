@@ -8,16 +8,9 @@ from collections import defaultdict
 import os
 from dotenv import load_dotenv
 
-# Try to import advanced ML libraries but handle gracefully if they fail
-try:
-    from transformers import pipeline
-    from sentence_transformers import SentenceTransformer
-    import torch.nn.functional as F
-    ML_AVAILABLE = True
-    print("Advanced ML libraries available. Using enhanced analysis.")
-except ImportError:
-    ML_AVAILABLE = False
-    print("Advanced ML libraries not available. Falling back to simple analysis.")
+# Set ML_AVAILABLE to False so we always use the simple approach
+ML_AVAILABLE = False
+print("Using simple keyword-based extraction approach")
 
 load_dotenv()
 
@@ -95,58 +88,7 @@ def extract_urls(messages: List[Dict[str, str]]) -> List[str]:
         urls.update(found)
     return list(urls)
 
-# 3. Determine if a message is a coding tip - ML version
-def extract_coding_tips_ml(messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-    """Extract coding tips using ML models for better accuracy."""
-    model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
-    
-    # Define templates for coding tips
-    templates = [
-        "Here's a coding tip:",
-        "I learned this programming technique:",
-        "When using AI, you should:",
-        "A good practice in software development is:",
-        "This is how you solve this coding problem:",
-        "The best way to use this tool is:",
-        "When working with LLMs, remember to:"
-    ]
-    
-    # Encode templates
-    template_embeddings = model.encode(templates, convert_to_tensor=True)
-    
-    tips = []
-    for msg in messages:
-        # Skip very short messages or system messages
-        if len(msg['message'].split()) < 5 or msg['sender'] == 'SYSTEM':
-            continue
-        
-        # Skip greetings and common phrases
-        greetings = ['hello', 'hi', 'hey', 'good morning', 'thanks', 'thank you', 'bye']
-        if any(greeting in msg['message'].lower() for greeting in greetings) and len(msg['message'].split()) < 10:
-            continue
-        
-        # Embed the message
-        try:
-            msg_embedding = model.encode(msg['message'], convert_to_tensor=True)
-            
-            # Calculate similarity with templates
-            similarities = F.cosine_similarity(msg_embedding.unsqueeze(0), template_embeddings)
-            max_similarity = similarities.max().item()
-            
-            # If similar enough to any template, consider it a tip
-            if max_similarity > 0.3:  # Threshold can be adjusted
-                tips.append({
-                    'content': msg['message'],
-                    'similarity': max_similarity
-                })
-        except Exception as e:
-            print(f"Error processing message: {e}")
-            continue
-    
-    # Sort by similarity and return
-    return sorted(tips, key=lambda x: x.get('similarity', 0), reverse=True)
-
-# 3. Determine if a message is a coding tip - simple version
+# Determine if a message is a coding tip - simple version
 def extract_coding_tips_simple(messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     """Extract coding tips and guidance from messages using keyword matching."""
     # Technical keywords to keep
@@ -198,18 +140,10 @@ def extract_coding_tips_simple(messages: List[Dict[str, str]]) -> List[Dict[str,
     
     return tips
 
-# Wrapper function to choose the right implementation
+# Wrapper function - now just calls the simple approach
 def extract_coding_tips(messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-    """Extract coding tips using the best available method."""
-    if ML_AVAILABLE:
-        try:
-            return extract_coding_tips_ml(messages)
-        except Exception as e:
-            print(f"ML-based extraction failed: {e}")
-            print("Falling back to simple extraction")
-            return extract_coding_tips_simple(messages)
-    else:
-        return extract_coding_tips_simple(messages)
+    """Extract coding tips using the simple keyword approach."""
+    return extract_coding_tips_simple(messages)
 
 # 4. Fetch URL title
 def fetch_url_title(url: str) -> str:
